@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Archlight Realm – Interaktiv 3D-Inspeksjon & Puslespill-visning</title>
+<style>
+  :root {
+    --bg-dark: #14171d;
+    --panel-bg: rgba(24, 28, 36, 0.94);
+    --border-col: rgba(255, 255, 255, 0.12);
+    --accent: #d8b168;
+    --accent-hover: #ecc982;
+    --text-main: #f2efe9;
+    --text-muted: #a4acb8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  body {
+    width: 100vw; height: 100vh; overflow: hidden;
+    background: var(--bg-dark); color: var(--text-main);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  #canvas3d {
+    width: 100vw; height: 100vh; display: block;
+    cursor: grab;
+  }
+  #canvas3d:active { cursor: grabbing; }
+
+  .topbar {
+    position: fixed; top: 14px; left: 16px; right: 16px;
+    height: 52px; background: var(--panel-bg);
+    border: 1px solid var(--border-col); border-radius: 10px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 18px; backdrop-filter: blur(10px); z-index: 20;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; }
+  .brand h1 { font-size: 17px; font-weight: 600; color: var(--accent); letter-spacing: 0.3px; }
+  .brand span { font-size: 12.5px; color: var(--text-muted); }
+
+  .mode-tabs { display: flex; gap: 8px; }
+  .tab-btn {
+    padding: 7px 15px; border-radius: 6px; border: 1px solid var(--border-col);
+    background: rgba(255,255,255,0.04); color: var(--text-main);
+    font-size: 13px; font-weight: 500; cursor: pointer; transition: 0.15s;
+  }
+  .tab-btn:hover { background: rgba(255,255,255,0.1); }
+  .tab-btn.active {
+    background: var(--accent); color: #15171c; border-color: var(--accent); font-weight: 600;
+  }
+
+  .sidebar {
+    position: fixed; top: 78px; left: 16px; bottom: 16px; width: 310px;
+    background: var(--panel-bg); border: 1px solid var(--border-col);
+    border-radius: 10px; padding: 14px 16px; overflow-y: auto;
+    backdrop-filter: blur(10px); z-index: 20;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .sec-title {
+    font-size: 11.5px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.8px; color: var(--accent); margin-bottom: 7px;
+  }
+  .puzzle-box {
+    background: rgba(216, 177, 104, 0.08);
+    border: 1px solid rgba(216, 177, 104, 0.35);
+    border-radius: 8px; padding: 10px 12px;
+  }
+  .preset-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  }
+  .preset-btn {
+    padding: 7px 9px; border-radius: 6px; border: 1px solid var(--border-col);
+    background: rgba(255,255,255,0.05); color: var(--text-main);
+    font-size: 12px; text-align: left; cursor: pointer; transition: 0.14s;
+  }
+  .preset-btn:hover {
+    background: rgba(216, 177, 104, 0.18); border-color: var(--accent);
+  }
+  .preset-btn.full-w { grid-column: span 2; font-weight: 600; }
+  .preset-btn.accent-btn {
+    background: rgba(216, 177, 104, 0.22); border-color: var(--accent); font-weight: 600; text-align: center;
+  }
+
+  .ctrl-row {
+    display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;
+  }
+  .ctrl-label {
+    display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted);
+  }
+  input[type="range"] {
+    width: 100%; accent-color: var(--accent); cursor: pointer;
+  }
+  select {
+    width: 100%; padding: 7px 9px; border-radius: 6px;
+    background: #1f242d; color: var(--text-main);
+    border: 1px solid var(--border-col); font-size: 12.5px; cursor: pointer;
+  }
+  .chk-row {
+    display: flex; align-items: center; gap: 8px; font-size: 12.5px;
+    color: var(--text-main); cursor: pointer; margin-top: 6px;
+  }
+  .chk-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+
+  .help-box {
+    margin-top: auto; padding: 10px 12px; border-radius: 7px;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07);
+    font-size: 12px; line-height: 1.5; color: var(--text-muted);
+  }
+  .help-box b { color: var(--text-main); }
+
+  #loader {
+    position: fixed; inset: 0; background: rgba(15, 18, 24, 0.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 50; gap: 14px; transition: opacity 0.3s;
+  }
+  .spinner {
+    width: 44px; height: 44px; border: 4px solid rgba(216, 177, 104, 0.25);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #galleryView {
+    position: fixed; top: 78px; left: 16px; right: 16px; bottom: 16px;
+    background: var(--panel-bg); border: 1px solid var(--border-col);
+    border-radius: 10px; display: none; flex-direction: column; z-index: 25;
+    overflow: hidden;
+  }
+  .gal-bar {
+    display: flex; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border-col);
+    flex-wrap: wrap; align-items: center;
+  }
+  .gal-stage {
+    flex: 1; position: relative; overflow: hidden; background: #0e1015;
+    cursor: grab; display: flex; align-items: center; justify-content: center;
+  }
+  .gal-stage:active { cursor: grabbing; }
+  #galImg {
+    max-width: 95%; max-height: 95%; transform-origin: center center;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  }
+</style>
+</head>
+<body>
+
+<div id="loader">
+  <div class="spinner"></div>
+  <div id="loaderText" style="font-size:15px;font-weight:500;">Laster inn 3D-modell av Archlight Realm (9 puslespillbrikker)...</div>
+</div>
+
+<div class="topbar">
+  <div class="brand">
+    <h1>Archlight Realm – 3D Diorama & Puslespill</h1>
+    <span id="meshStats">492 × 690 × 105 mm</span>
+  </div>
+  <div class="mode-tabs">
+    <button class="tab-btn active" id="btnMode3D" onclick="switchMode('3d')">Interaktiv 3D-modell (WebGL)</button>
+    <button class="tab-btn" id="btnMode2D" onclick="switchMode('2d')">Høyoppløste SSAO Makrobilder (1600×1600)</button>
+  </div>
+</div>
+
+<div class="sidebar" id="sidebar3D">
+  <!-- NEW: Puzzle Separation / Explode Controls -->
+  <div class="puzzle-box">
+    <div class="sec-title">Puslespill – Skill delene fra hverandre</div>
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Avstand mellom de 9 brikkene</span><span id="lblExplode">0 mm (Samlet)</span></div>
+      <input type="range" id="rngExplode" min="0" max="75" value="0" oninput="updateSliders()">
+    </div>
+    <div class="preset-grid" style="margin-bottom:8px;">
+      <button class="preset-btn accent-btn" onclick="setExplode(0)">Samlet (0 mm)</button>
+      <button class="preset-btn accent-btn" onclick="setExplode(38)">Skill brikker (38 mm)</button>
+    </div>
+    <div class="ctrl-row" style="margin-bottom:4px;">
+      <div class="ctrl-label"><span>Vis brikke(r):</span></div>
+      <select id="selTileFilter" onchange="onTileFilterChange()">
+        <option value="-1">Alle 9 puslespillbrikker</option>
+        <option value="0">Tile 1 (NV): Neverwinter & Katedral</option>
+        <option value="1">Tile 2 (N): Nord-fjellkjede & Fjellpass</option>
+        <option value="2">Tile 3 (NØ): The Aegis, Leir & Flyplass</option>
+        <option value="3">Tile 4 (V): Port, Fyr & Havn</option>
+        <option value="4">Tile 5 (Midt): Archlight & Krystallen</option>
+        <option value="5">Tile 6 (Ø): Dragon Eye & Hulen i fjellet</option>
+        <option value="6">Tile 7 (SV): Storm Peak</option>
+        <option value="7">Tile 8 (S): Sunken Lake</option>
+        <option value="8">Tile 9 (SØ): Silent Lake & Skogen</option>
+      </select>
+    </div>
+    <label class="chk-row">
+      <input type="checkbox" id="chkTileColors" onchange="requestRender()">
+      <span>Fargelegg de 9 brikkene ulikt</span>
+    </label>
+  </div>
+
+  <div>
+    <div class="sec-title">Hurtigkamera (Klikk for å zoome til sted)</div>
+    <div class="preset-grid">
+      <button class="preset-btn full-w" onclick="setCameraPreset(0, 0, 12, -52, 36, 680)">Hele kartet (Skråstilt 3D)</button>
+      <button class="preset-btn full-w" onclick="setCameraPreset(0, 0, 10, -90, 88, 720)">Hele kartet (Rett ovenfra)</button>
+      <button class="preset-btn" onclick="setCameraPreset(2, -32, 38, -65, 22, 160)">Archlight & Krystallen</button>
+      <button class="preset-btn" onclick="setCameraPreset(2, -32, 20, -90, 10, 115)">Under Archlight (Støttefri)</button>
+      <button class="preset-btn" onclick="setCameraPreset(-140, 180, 14, -55, 32, 195)">Neverwinter & Bymur</button>
+      <button class="preset-btn" onclick="setCameraPreset(-2, 195, 18, -65, 34, 210)">Fjellpasset & Veien i nord</button>
+      <button class="preset-btn" onclick="setCameraPreset(145, 225, 14, -58, 32, 210)">The Aegis & Flyplass</button>
+      <button class="preset-btn" onclick="setCameraPreset(185, -35, 16, -78, 22, 125)">Hulen i fjellet (Øst)</button>
+      <button class="preset-btn" onclick="setCameraPreset(-95, -185, 10, -55, 34, 190)">Sunken Lake & Storm Peak</button>
+      <button class="preset-btn" onclick="setCameraPreset(125, -210, 8, -55, 34, 185)">Silent Lake & Hytta</button>
+    </div>
+  </div>
+
+  <div>
+    <div class="sec-title">Farge og Overflate</div>
+    <div class="ctrl-row">
+      <select id="selShader" onchange="requestRender()">
+        <option value="0">Varm Sandstein / 3D-print (Standard)</option>
+        <option value="1">Høykontrast Gråstein & Relieff</option>
+        <option value="2">Topografisk Høyde- & Vannfarge</option>
+        <option value="3">Antikk Bronse</option>
+      </select>
+    </div>
+  </div>
+
+  <div>
+    <div class="sec-title">Lys & Tverrsnitt</div>
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Solretning (Horisontalt)</span><span id="lblSunAz">45°</span></div>
+      <input type="range" id="rngSunAz" min="-180" max="180" value="45" oninput="updateSliders()">
+    </div>
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Solhøyde (Vertikalt)</span><span id="lblSunEl">52°</span></div>
+      <input type="range" id="rngSunEl" min="10" max="88" value="52" oninput="updateSliders()">
+    </div>
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Kant- & Relieff-forsterkning</span><span id="lblCrevice">110%</span></div>
+      <input type="range" id="rngCrevice" min="0" max="200" value="110" oninput="updateSliders()">
+    </div>
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Tverrsnitt Sør–Nord (Y-kutt)</span><span id="lblClipY">Av</span></div>
+      <input type="range" id="rngClipY" min="-350" max="350" value="-350" oninput="updateSliders()">
+    </div>
+  </div>
+
+  <div class="help-box">
+    <b>Musestyring i 3D:</b><br>
+    • <b>Venstre museknapp + dra:</b> Roter kamera<br>
+    • <b>Høyre museknapp + dra:</b> Flytt sidelengs (Pan)<br>
+    • <b>Musehjul:</b> Zoom helt inn og ut
+  </div>
+</div>
+
+<div id="galleryView">
+  <div class="gal-bar">
+    <span style="font-size:13px;color:var(--accent);font-weight:600;margin-right:8px;">Velg 1600×1600 SSAO-bilde (bruk musehjul for å zoome, dra for å flytte):</span>
+    <button class="preset-btn" onclick="setGalImg('preview_archlight_assembled.png')">Hele Kartet (3D Skrå)</button>
+    <button class="preset-btn" onclick="setGalImg('preview_archlight_topdown.png')">Hele Kartet (Ovenfra)</button>
+    <button class="preset-btn" onclick="setGalImg('preview_macro_d_archlight.png')">Makro D: Støttefri Archlight & Krystall</button>
+    <button class="preset-btn" onclick="setGalImg('preview_macro_e_lakes_waterfalls.png')">Makro E: Fjellpasset, Hulen & Dreammere</button>
+    <button class="preset-btn" onclick="setGalImg('preview_macro_a_neverwinter.png')">Makro A: Neverwinter</button>
+    <button class="preset-btn" onclick="setGalImg('preview_macro_b_aegis_airfield.png')">Makro B: The Aegis & Flyplass</button>
+    <button class="preset-btn" onclick="setGalImg('preview_macro_c_sunken_storm_port.png')">Makro C: Sunken Lake & Port</button>
+    <button class="preset-btn" onclick="resetGalZoom()">Nullstill Zoom (100%)</button>
+  </div>
+  <div class="gal-stage" id="galStage">
+    <img id="galImg" src="preview_archlight_assembled.png" alt="SSAO Render">
+  </div>
+</div>
+
+<canvas id="canvas3d"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas3d');
+const gl = canvas.getContext('webgl2', { antialias: true, depth: true })
+        || canvas.getContext('webgl', { antialias: true, depth: true });
+
+const isWebGL2 = (typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext);
+if (!isWebGL2) {
+  gl.getExtension('OES_element_index_uint');
+  gl.getExtension('OES_standard_derivatives');
+}
+
+const vsSource = isWebGL2 ? `#version 300 es
+precision highp float;
+in vec3 aPos;
+uniform mat4 uMVP;
+uniform mat4 uModelView;
+uniform vec3 uTileShift;
+out vec3 vWorldPos;
+out vec3 vOrigPos;
+out vec3 vViewPos;
+void main() {
+  vOrigPos = aPos;
+  vec3 shifted = aPos + uTileShift;
+  vWorldPos = shifted;
+  vec4 vp = uModelView * vec4(shifted, 1.0);
+  vViewPos = vp.xyz;
+  gl_Position = uMVP * vec4(shifted, 1.0);
+}
+` : `
+precision highp float;
+attribute vec3 aPos;
+uniform mat4 uMVP;
+uniform mat4 uModelView;
+uniform vec3 uTileShift;
+varying vec3 vWorldPos;
+varying vec3 vOrigPos;
+varying vec3 vViewPos;
+void main() {
+  vOrigPos = aPos;
+  vec3 shifted = aPos + uTileShift;
+  vWorldPos = shifted;
+  vec4 vp = uModelView * vec4(shifted, 1.0);
+  vViewPos = vp.xyz;
+  gl_Position = uMVP * vec4(shifted, 1.0);
+}
+`;
+
+const fsSource = isWebGL2 ? `#version 300 es
+precision highp float;
+in vec3 vWorldPos;
+in vec3 vOrigPos;
+in vec3 vViewPos;
+uniform vec3 uSunDir;
+uniform vec3 uViewSunDir;
+uniform vec3 uTileTint;
+uniform int uShaderMode;
+uniform float uCreviceStrength;
+uniform float uClipY;
+out vec4 fragColor;
+
+void main() {
+  if (vOrigPos.y < uClipY) discard;
+
+  vec3 dx = dFdx(vViewPos);
+  vec3 dy = dFdy(vViewPos);
+  vec3 N_view = normalize(cross(dx, dy));
+
+  vec3 wdx = dFdx(vWorldPos);
+  vec3 wdy = dFdy(vWorldPos);
+  vec3 N_world = normalize(cross(wdx, wdy));
+  if (N_view.z < 0.0) {
+    N_view = -N_view;
+    N_world = -N_world;
+  }
+
+  vec3 baseCol = vec3(0.83, 0.79, 0.72);
+  if (uShaderMode == 1) {
+    baseCol = vec3(0.76, 0.78, 0.81);
+  } else if (uShaderMode == 2) {
+    float z = vOrigPos.z;
+    if (z < 3.1) {
+      baseCol = mix(vec3(0.22, 0.43, 0.62), vec3(0.32, 0.58, 0.74), clamp((z - 1.6) / 1.5, 0.0, 1.0));
+    } else if (z < 7.5) {
+      baseCol = mix(vec3(0.46, 0.58, 0.38), vec3(0.68, 0.66, 0.52), clamp((z - 3.1) / 4.4, 0.0, 1.0));
+    } else if (z < 26.0) {
+      baseCol = mix(vec3(0.68, 0.66, 0.52), vec3(0.55, 0.52, 0.49), clamp((z - 7.5) / 18.5, 0.0, 1.0));
+    } else {
+      baseCol = mix(vec3(0.55, 0.52, 0.49), vec3(0.92, 0.93, 0.96), clamp((z - 26.0) / 22.0, 0.0, 1.0));
+    }
+  } else if (uShaderMode == 3) {
+    baseCol = vec3(0.72, 0.56, 0.36);
+  }
+
+  baseCol *= uTileTint;
+
+  vec3 L_key = normalize(uSunDir);
+  vec3 L_fill = normalize(vec3(-L_key.x, -L_key.y, 0.65));
+  float ndlKey = max(dot(N_world, L_key), 0.0);
+  float ndlFill = max(dot(N_world, L_fill), 0.0);
+  float rim = pow(clamp(1.0 - N_view.z, 0.0, 1.0), 2.2);
+
+  float nEdge = length(fwidth(N_world)) * 0.38 * uCreviceStrength;
+  float steepShade = mix(1.0, 0.72 + 0.28 * abs(N_world.z), 0.55 * uCreviceStrength);
+
+  float light = (0.24 + 0.66 * ndlKey + 0.16 * ndlFill + 0.12 * rim) * steepShade;
+  vec3 col = baseCol * light + vec3(0.09, 0.08, 0.06) * clamp(nEdge, 0.0, 0.28);
+
+  if (uShaderMode == 3) {
+    vec3 H = normalize(vec3(0.0, 0.0, 1.0) + normalize(uViewSunDir));
+    float spec = pow(max(dot(N_view, H), 0.0), 28.0);
+    col += vec3(0.35, 0.28, 0.18) * spec;
+  }
+
+  fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}
+` : `#extension GL_OES_standard_derivatives : enable
+precision highp float;
+varying vec3 vWorldPos;
+varying vec3 vOrigPos;
+varying vec3 vViewPos;
+uniform vec3 uSunDir;
+uniform vec3 uViewSunDir;
+uniform vec3 uTileTint;
+uniform int uShaderMode;
+uniform float uCreviceStrength;
+uniform float uClipY;
+
+void main() {
+  if (vOrigPos.y < uClipY) discard;
+  vec3 dx = dFdx(vViewPos);
+  vec3 dy = dFdy(vViewPos);
+  vec3 N_view = normalize(cross(dx, dy));
+  vec3 wdx = dFdx(vWorldPos);
+  vec3 wdy = dFdy(vWorldPos);
+  vec3 N_world = normalize(cross(wdx, wdy));
+  if (N_view.z < 0.0) { N_view = -N_view; N_world = -N_world; }
+
+  vec3 baseCol = vec3(0.83, 0.79, 0.72) * uTileTint;
+  if (uShaderMode == 1) baseCol = vec3(0.76, 0.78, 0.81) * uTileTint;
+  else if (uShaderMode == 3) baseCol = vec3(0.72, 0.56, 0.36) * uTileTint;
+
+  vec3 L_key = normalize(uSunDir);
+  vec3 L_fill = normalize(vec3(-L_key.x, -L_key.y, 0.65));
+  float ndlKey = max(dot(N_world, L_key), 0.0);
+  float ndlFill = max(dot(N_world, L_fill), 0.0);
+  float light = 0.24 + 0.66 * ndlKey + 0.16 * ndlFill;
+  gl_FragColor = vec4(clamp(baseCol * light, 0.0, 1.0), 1.0);
+}
+`;
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, vsSource));
+gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, fsSource));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const locPos = gl.getAttribLocation(prog, 'aPos');
+const locMVP = gl.getUniformLocation(prog, 'uMVP');
+const locMV = gl.getUniformLocation(prog, 'uModelView');
+const locTileShift = gl.getUniformLocation(prog, 'uTileShift');
+const locTileTint = gl.getUniformLocation(prog, 'uTileTint');
+const locSun = gl.getUniformLocation(prog, 'uSunDir');
+const locViewSun = gl.getUniformLocation(prog, 'uViewSunDir');
+const locMode = gl.getUniformLocation(prog, 'uShaderMode');
+const locCrev = gl.getUniformLocation(prog, 'uCreviceStrength');
+const locClipY = gl.getUniformLocation(prog, 'uClipY');
+
+let indexCount = 0;
+let tileRanges = [];
+
+// 9 subtle distinct pastel/earth tints when "Fargelegg de 9 brikkene ulikt" is checked
+const TILE_TINTS = [
+  [1.06, 0.94, 0.90], // Tile 1 (NW)
+  [0.92, 1.04, 0.94], // Tile 2 (N)
+  [0.92, 0.96, 1.08], // Tile 3 (NE)
+  [1.04, 1.02, 0.88], // Tile 4 (W)
+  [1.06, 0.98, 1.06], // Tile 5 (Center - Archlight)
+  [0.90, 1.05, 1.04], // Tile 6 (E)
+  [1.05, 0.92, 0.98], // Tile 7 (SW)
+  [0.95, 1.04, 0.90], // Tile 8 (S)
+  [0.94, 0.94, 1.06]  // Tile 9 (SE)
+];
+
+async function fetchGzippedBuffer(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status + ' ved lasting av ' + url);
+  const ds = new DecompressionStream('gzip');
+  const decompressed = resp.body.pipeThrough(ds);
+  return await new Response(decompressed).arrayBuffer();
+}
+
+async function initMesh() {
+  const lt = document.getElementById('loaderText');
+  try {
+    lt.textContent = 'Laster ned 3D-modell (komprimert)...';
+    const [metaResp, vBuf, fBuf] = await Promise.all([
+      fetch('mesh_meta.json').then(r => { if (!r.ok) throw new Error('Fant ikke mesh_meta.json'); return r.json(); }),
+      fetchGzippedBuffer('verts.bin.gz'),
+      fetchGzippedBuffer('faces.bin.gz')
+    ]);
+
+    lt.textContent = 'Bygger WebGL-grafikk...';
+    const m = metaResp;
+    document.getElementById('meshStats').textContent =
+      `492 × 690 × 105 mm  |  9 brikker  |  ${m.numTris.toLocaleString('nb-NO')} triangler`;
+
+    const vI16 = new Int16Array(vBuf);
+    const vF32 = new Float32Array(vI16.length);
+    const sc = m.scale;
+    for (let i = 0; i < vI16.length; i++) vF32[i] = vI16[i] * sc;
+
+    const fU32 = new Uint32Array(fBuf);
+    indexCount = fU32.length;
+    tileRanges = m.tiles || [{ id: 0, row: 1, col: 1, firstIndex: 0, indexCount: indexCount }];
+
+    const vbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, vF32, gl.STATIC_DRAW);
+
+    const ibo = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, fU32, gl.STATIC_DRAW);
+
+    gl.enableVertexAttribArray(locPos);
+    gl.vertexAttribPointer(locPos, 3, gl.FLOAT, false, 0, 0);
+
+    const loader = document.getElementById('loader');
+    loader.style.opacity = '0';
+    setTimeout(() => loader.style.display = 'none', 300);
+    requestRender();
+  } catch (err) {
+    lt.textContent = 'Feil ved lasting av 3D-modell: ' + err.message;
+    console.error(err);
+  }
+}
+
+let cam = {
+  target: [0.0, 0.0, 12.0],
+  azim: -52.0,
+  elev: 36.0,
+  dist: 680.0
+};
+
+function setCameraPreset(tx, ty, tz, az, el, dist) {
+  cam.target = [tx, ty, tz];
+  cam.azim = az;
+  cam.elev = el;
+  cam.dist = dist;
+  requestRender();
+}
+
+function setExplode(val) {
+  document.getElementById('rngExplode').value = val;
+  if (val > 15) {
+    document.getElementById('chkTileColors').checked = true;
+  }
+  updateSliders();
+}
+
+function onTileFilterChange() {
+  const tid = parseInt(document.getElementById('selTileFilter').value, 10);
+  if (tid >= 0) {
+    const r = Math.floor(tid / 3);
+    const c = tid % 3;
+    const tx = (c - 1) * 164.0;
+    const ty = (1 - r) * 230.0;
+    cam.target = [tx, ty, 14.0];
+    cam.dist = 310.0;
+  } else {
+    cam.target = [0.0, 0.0, 12.0];
+    cam.dist = 680.0;
+  }
+  requestRender();
+}
+
+function perspective(fovRad, aspect, near, far) {
+  const f = 1.0 / Math.tan(fovRad / 2);
+  const nf = 1 / (near - far);
+  return new Float32Array([
+    f / aspect, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (far + near) * nf, -1,
+    0, 0, (2 * far * near) * nf, 0
+  ]);
+}
+
+function lookAt(eye, center, up) {
+  let zx = eye[0] - center[0], zy = eye[1] - center[1], zz = eye[2] - center[2];
+  let len = Math.hypot(zx, zy, zz);
+  zx /= len; zy /= len; zz /= len;
+  let xx = up[1] * zz - up[2] * zy;
+  let xy = up[2] * zx - up[0] * zz;
+  let xz = up[0] * zy - up[1] * zx;
+  len = Math.hypot(xx, xy, xz);
+  if (len > 1e-6) { xx /= len; xy /= len; xz /= len; }
+  let yx = zy * xz - zz * xy;
+  let yy = zz * xx - zx * xz;
+  let yz = zx * xy - zy * xx;
+  return new Float32Array([
+    xx, yx, zx, 0,
+    xy, yy, zy, 0,
+    xz, yz, zz, 0,
+    -(xx * eye[0] + xy * eye[1] + xz * eye[2]),
+    -(yx * eye[0] + yy * eye[1] + yz * eye[2]),
+    -(zx * eye[0] + zy * eye[1] + zz * eye[2]),
+    1
+  ]);
+}
+
+function mulMat4(a, b) {
+  const out = new Float32Array(16);
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      out[j * 4 + i] =
+        a[0 * 4 + i] * b[j * 4 + 0] +
+        a[1 * 4 + i] * b[j * 4 + 1] +
+        a[2 * 4 + i] * b[j * 4 + 2] +
+        a[3 * 4 + i] * b[j * 4 + 3];
+    }
+  }
+  return out;
+}
+
+let renderPending = false;
+function requestRender() {
+  if (!renderPending) {
+    renderPending = true;
+    requestAnimationFrame(render);
+  }
+}
+
+function updateSliders() {
+  const exp = parseFloat(document.getElementById('rngExplode').value);
+  document.getElementById('lblExplode').textContent = exp === 0 ? '0 mm (Samlet)' : (exp + ' mm');
+  document.getElementById('lblSunAz').textContent = document.getElementById('rngSunAz').value + '°';
+  document.getElementById('lblSunEl').textContent = document.getElementById('rngSunEl').value + '°';
+  document.getElementById('lblCrevice').textContent = document.getElementById('rngCrevice').value + '%';
+  const cy = parseFloat(document.getElementById('rngClipY').value);
+  document.getElementById('lblClipY').textContent = (cy <= -348) ? 'Av' : (cy + ' mm');
+  requestRender();
+}
+
+function render() {
+  renderPending = false;
+  if (!indexCount) return;
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.floor(window.innerWidth * dpr);
+  const h = Math.floor(window.innerHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w; canvas.height = h;
+  }
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(0.09, 0.11, 0.14, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+
+  const az = cam.azim * Math.PI / 180.0;
+  const el = cam.elev * Math.PI / 180.0;
+  const eye = [
+    cam.target[0] + cam.dist * Math.cos(el) * Math.cos(az),
+    cam.target[1] + cam.dist * Math.cos(el) * Math.sin(az),
+    cam.target[2] + cam.dist * Math.sin(el)
+  ];
+
+  const mv = lookAt(eye, cam.target, [0, 0, 1]);
+  const proj = perspective(38.0 * Math.PI / 180.0, w / h, Math.max(2.0, cam.dist * 0.02), cam.dist * 4.5 + 900.0);
+  const mvp = mulMat4(proj, mv);
+
+  const sunAz = parseFloat(document.getElementById('rngSunAz').value) * Math.PI / 180.0;
+  const sunEl = parseFloat(document.getElementById('rngSunEl').value) * Math.PI / 180.0;
+  const sx = Math.cos(sunEl) * Math.cos(sunAz);
+  const sy = Math.cos(sunEl) * Math.sin(sunAz);
+  const sz = Math.sin(sunEl);
+
+  gl.uniformMatrix4fv(locMVP, false, mvp);
+  gl.uniformMatrix4fv(locMV, false, mv);
+  gl.uniform3f(locSun, sx, sy, sz);
+  gl.uniform3f(locViewSun, 0.3, 0.4, 0.85);
+  gl.uniform1i(locMode, parseInt(document.getElementById('selShader').value, 10));
+  gl.uniform1f(locCrev, parseFloat(document.getElementById('rngCrevice').value) / 100.0);
+  const cyVal = parseFloat(document.getElementById('rngClipY').value);
+  gl.uniform1f(locClipY, cyVal <= -348 ? -9999.0 : cyVal);
+
+  const explodeMm = parseFloat(document.getElementById('rngExplode').value);
+  const filterTid = parseInt(document.getElementById('selTileFilter').value, 10);
+  const useTint = document.getElementById('chkTileColors').checked;
+
+  for (let i = 0; i < tileRanges.length; i++) {
+    const tr = tileRanges[i];
+    if (filterTid >= 0 && tr.id !== filterTid) continue;
+
+    const shiftX = (tr.col - 1) * explodeMm;
+    const shiftY = (1 - tr.row) * explodeMm;
+    gl.uniform3f(locTileShift, shiftX, shiftY, 0.0);
+
+    if (useTint) {
+      const tint = TILE_TINTS[tr.id % TILE_TINTS.length];
+      gl.uniform3f(locTileTint, tint[0], tint[1], tint[2]);
+    } else {
+      gl.uniform3f(locTileTint, 1.0, 1.0, 1.0);
+    }
+
+    gl.drawElements(gl.TRIANGLES, tr.indexCount, gl.UNSIGNED_INT, tr.firstIndex * 4);
+  }
+}
+
+let dragMode = 0;
+let lastX = 0, lastY = 0;
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('mousedown', e => {
+  lastX = e.clientX; lastY = e.clientY;
+  if (e.button === 0 && !e.shiftKey) dragMode = 1;
+  else dragMode = 2;
+});
+window.addEventListener('mouseup', () => dragMode = 0);
+window.addEventListener('mousemove', e => {
+  if (!dragMode) return;
+  const dx = e.clientX - lastX;
+  const dy = e.clientY - lastY;
+  lastX = e.clientX; lastY = e.clientY;
+
+  if (dragMode === 1) {
+    cam.azim -= dx * 0.35;
+    cam.elev = Math.max(4.0, Math.min(89.2, cam.elev + dy * 0.32));
+  } else {
+    const az = cam.azim * Math.PI / 180.0;
+    const el = cam.elev * Math.PI / 180.0;
+    const rx = -Math.sin(az), ry = Math.cos(az);
+    const ux = -Math.sin(el) * Math.cos(az), uy = -Math.sin(el) * Math.sin(az), uz = Math.cos(el);
+    const panScale = cam.dist * 0.0012;
+    cam.target[0] -= (dx * rx - dy * ux) * panScale;
+    cam.target[1] -= (dx * ry - dy * uy) * panScale;
+    cam.target[2] = Math.max(0.0, Math.min(115.0, cam.target[2] + dy * uz * panScale));
+  }
+  requestRender();
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = Math.exp(e.deltaY * 0.0011);
+  cam.dist = Math.max(28.0, Math.min(1450.0, cam.dist * factor));
+  requestRender();
+}, { passive: false });
+
+window.addEventListener('resize', requestRender);
+
+function switchMode(m) {
+  const is3D = (m === '3d');
+  document.getElementById('btnMode3D').classList.toggle('active', is3D);
+  document.getElementById('btnMode2D').classList.toggle('active', !is3D);
+  document.getElementById('sidebar3D').style.display = is3D ? 'flex' : 'none';
+  document.getElementById('galleryView').style.display = is3D ? 'none' : 'flex';
+  if (is3D) requestRender();
+}
+
+let galScale = 1.0, galX = 0, galY = 0, galDrag = false, gLastX = 0, gLastY = 0;
+const galImg = document.getElementById('galImg');
+const galStage = document.getElementById('galStage');
+
+function applyGalTransform() {
+  galImg.style.transform = `translate(${galX}px, ${galY}px) scale(${galScale})`;
+}
+function setGalImg(src) {
+  galImg.src = src;
+  resetGalZoom();
+}
+function resetGalZoom() {
+  galScale = 1.0; galX = 0; galY = 0;
+  applyGalTransform();
+}
+galStage.addEventListener('wheel', e => {
+  e.preventDefault();
+  galScale = Math.max(0.5, Math.min(8.0, galScale * Math.exp(-e.deltaY * 0.0015)));
+  applyGalTransform();
+}, { passive: false });
+galStage.addEventListener('mousedown', e => {
+  galDrag = true; gLastX = e.clientX; gLastY = e.clientY;
+});
+window.addEventListener('mouseup', () => galDrag = false);
+window.addEventListener('mousemove', e => {
+  if (!galDrag) return;
+  galX += e.clientX - gLastX;
+  galY += e.clientY - gLastY;
+  gLastX = e.clientX; gLastY = e.clientY;
+  applyGalTransform();
+});
+
+window.addEventListener('DOMContentLoaded', initMesh);
+</script>
+</body>
+</html>
